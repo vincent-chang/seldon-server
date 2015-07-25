@@ -46,8 +46,10 @@ import io.seldon.api.statsd.StatsdPeer;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
@@ -125,7 +127,8 @@ public class JsClientController {
         MDCKeys.addKeys(consumerBean, userId, itemId,recTag);
         //added zehtg parameter as additional option for rlabs
         if(StringUtils.isNotBlank(req)) { rlabs=req; }
-        logger.debug("Creating action for consumer: " + consumerBean.getShort_name());
+        if (logger.isDebugEnabled())
+        	logger.debug("Creating action for consumer: " + consumerBean.getShort_name());
         ActionBean actionBean = createAction(userId, itemId, type, referrer,recTag);
         boolean isCTR = StringUtils.isNotBlank(rlabs);
 
@@ -154,7 +157,8 @@ public class JsClientController {
     					@RequestParam(value = "models", required = false) String models,
                         @RequestParam("jsonpCallback") String callback) {
         final ConsumerBean consumerBean = retrieveConsumer(session);
-        logger.debug("get user profile: " + userId + " for consumer: " + consumerBean.getShort_name());
+        if (logger.isDebugEnabled())
+        	logger.debug("get user profile: " + userId + " for consumer: " + consumerBean.getShort_name());
         ResourceBean responseBean = userProfileService.getProfile(consumerBean, userId, models);
         return asCallback(callback, responseBean);
     }
@@ -168,11 +172,13 @@ public class JsClientController {
                                     @RequestParam(value = "rlabs", required = false) String lastRecommendationListUuid,
                                     @RequestParam(value = "zehtg", required = false) String lastRecommendationListUuid2,
                                     @RequestParam(value = "dimension", defaultValue = "0") Integer dimensionId,
+                                    @RequestParam(value = "dimensions", required = false) String dimensionIds,                                    
                                     @RequestParam(value = "limit", defaultValue = "10") Integer recommendationsLimit,
                                     @RequestParam(value = "algorithms", required = false) String algorithms,
                                     @RequestParam(value = "source", required = false) String referrer,                                    
                                     @RequestParam(value = "rectag", required = false) String recTag,
                                     @RequestParam(value = "cohort", required = false, defaultValue = "false") Boolean includeCohort,
+                                    @RequestParam(value = "sort", required = false) String scoreItems,
                                     @RequestParam("user") String userId,
                                     @RequestParam("jsonpCallback") String callback) {
         final ConsumerBean consumerBean = retrieveConsumer(session);
@@ -180,7 +186,20 @@ public class JsClientController {
         //added zehtg parameter as additional option for rlabs
     	if(StringUtils.isNotBlank(lastRecommendationListUuid2)) { lastRecommendationListUuid=lastRecommendationListUuid2;}
         logger.info("Retrieving recommendations for user " + userId + ", consumer: " + consumerBean.getShort_name() + " with tag " + recTag);
-        final ResourceBean recommendations = getRecommendations(consumerBean, userId, itemId, dimensionId, lastRecommendationListUuid, recommendationsLimit, attributes,algorithms,referrer,recTag,includeCohort);
+        Set<Integer> dimensions;
+        if (dimensionIds != null)
+        {
+        	String[] parts = dimensionIds.split(",");
+       	 	dimensions = new HashSet<Integer>(parts.length);
+        	for(int i=0;i<parts.length;i++)
+        		dimensions.add(Integer.parseInt(parts[i]));
+        }
+        else
+        {
+        	dimensions = new HashSet<Integer>(1);
+        	dimensions.add(dimensionId);
+        }
+        final ResourceBean recommendations = getRecommendations(consumerBean, userId, itemId, dimensions, lastRecommendationListUuid, recommendationsLimit, attributes,algorithms,referrer,recTag,includeCohort,scoreItems);
         //tracking recommendations impression
         StatsdPeer.logImpression(consumerBean.getShort_name(),recTag);
         CtrFullLogger.log(false, consumerBean.getShort_name(), userId, itemId,recTag);
@@ -217,9 +236,9 @@ public class JsClientController {
     }
 
 
-    private ResourceBean getRecommendations(ConsumerBean consumerBean, String userId, String itemId, Integer dimensionId,
+    private ResourceBean getRecommendations(ConsumerBean consumerBean, String userId, String itemId, Set<Integer> dimensions,
                                             String lastRecommendationListUuid, Integer recommendationsLimit, String attributes,
-                                            String algorithms,String referrer,String recTag, boolean includeCohort) {
+                                            String algorithms,String referrer,String recTag, boolean includeCohort, String scoreItems) {
         Long internalItemId = null;
         if (itemId != null) {
             try {
@@ -228,15 +247,37 @@ public class JsClientController {
                 logger.warn("userRecommendations: item not found.");
             }
         }
+        
+        Set<Long> scoreItemsInternal = null;
+        if (scoreItems != null && !scoreItems.isEmpty())
+        {
+        	String[] parts = scoreItems.split(",");
+        	scoreItemsInternal = new HashSet<Long>();
+        	for(String externalSortId : parts)
+        	{
+        		try {
+        			Long internalSortId = itemService.getInternalItemId(consumerBean, externalSortId);
+        			scoreItemsInternal.add(internalSortId);
+        		} catch (APIException e) {
+        			logger.warn("userRecommendations: sort item not found."+externalSortId);
+        		}
+        	}
+        }
+        
         List<String> algList = null;
         if (algorithms != null && !algorithms.isEmpty()) {
-            logger.debug("ALGORITHM STRING: " + algorithms);
+        	if (logger.isDebugEnabled())
+        		logger.debug("ALGORITHM STRING: " + algorithms);
             algList = Arrays.asList(algorithms.split(Util.algOptionSeparator));
-            logger.debug("alglist size: " + algList.size());
+            if (logger.isDebugEnabled())
+            	logger.debug("alglist size: " + algList.size());
         }
-        logger.debug("JsClientController#getRecommendations: internal ID => " + internalItemId);
-        logger.debug("JsClientController#getRecommendations: last recommendation list uuid => " + lastRecommendationListUuid);
-        return recommendationBusinessService.recommendedItemsForUser(consumerBean, userId, internalItemId, dimensionId, lastRecommendationListUuid, recommendationsLimit, attributes,algList,referrer,recTag, includeCohort);
+        if (logger.isDebugEnabled())
+        {
+        	logger.debug("JsClientController#getRecommendations: internal ID => " + internalItemId);
+        	logger.debug("JsClientController#getRecommendations: last recommendation list uuid => " + lastRecommendationListUuid);
+        }
+        return recommendationBusinessService.recommendedItemsForUser(consumerBean, userId, internalItemId, dimensions, lastRecommendationListUuid, recommendationsLimit, attributes,algList,referrer,recTag, includeCohort,scoreItemsInternal);
     }
 
     // TODO category, tags

@@ -59,12 +59,12 @@ public class RecentMfRecommender implements ItemRecommendationAlgorithm {
 
 
     @Override
-    public ItemRecommendationResultSet recommend(String client, Long user, int dimension,
+    public ItemRecommendationResultSet recommend(String client, Long user, Set<Integer> dimensions,
             int maxRecsCount, RecommendationContext ctxt, List<Long> recentItemInteractions) {
 
 		RecommendationContext.OptionsHolder opts = ctxt.getOptsHolder();
 		int numRecentActionsToUse = opts.getIntegerOption(RECENT_ACTIONS_PROPERTY_NAME);
-        MfFeaturesManager.ClientMfFeaturesStore clientStore = this.store.getClientStore(client);
+        MfFeaturesManager.ClientMfFeaturesStore clientStore = this.store.getClientStore(client, ctxt.getOptsHolder());
 
         if(clientStore==null) {
             logger.debug("Couldn't find a matrix factorization store for this client");
@@ -74,7 +74,8 @@ public class RecentMfRecommender implements ItemRecommendationAlgorithm {
         List<Long> itemsToScore;
 		if(recentItemInteractions.size() > numRecentActionsToUse)
 		{
-			logger.debug("Limiting recent items for score to size "+numRecentActionsToUse+" from present "+recentItemInteractions.size());
+			if (logger.isDebugEnabled())
+				logger.debug("Limiting recent items for score to size "+numRecentActionsToUse+" from present "+recentItemInteractions.size());
 			itemsToScore = recentItemInteractions.subList(0, numRecentActionsToUse);
 		}
 		else
@@ -116,7 +117,8 @@ public class RecentMfRecommender implements ItemRecommendationAlgorithm {
         }
 
         List<ItemRecommendationResult> recsList = Ordering.natural().greatestOf(recs, maxRecsCount);
-        logger.debug("Created "+recsList.size() + " recs");
+        if (logger.isDebugEnabled())
+        	logger.debug("Created "+recsList.size() + " recs");
         return new ItemRecommendationResultSet(recsList, name);
     }
 

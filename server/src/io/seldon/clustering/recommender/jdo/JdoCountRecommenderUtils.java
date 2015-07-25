@@ -24,10 +24,7 @@
 package io.seldon.clustering.recommender.jdo;
 
 import io.seldon.cc.UserClusterManager;
-import io.seldon.clustering.recommender.ClusterCountStore;
-import io.seldon.clustering.recommender.ClusterFromReferrerPeer;
-import io.seldon.clustering.recommender.CountRecommender;
-import io.seldon.clustering.recommender.UserClusterStore;
+import io.seldon.clustering.recommender.*;
 
 import org.apache.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,11 +54,7 @@ public class JdoCountRecommenderUtils {
 		userClusters = UserClusterManager.get().getStore(client); // Hack until we always use this class
 		if (userClusters == null)
 		{
-			if (userClusters == null)
-			{
-				logger.warn("Using slow DB access to user clusers for client "+client);
-				userClusters = new JdoUserClusterStore(client);
-			}
+			return null;
 		}
 		
 		return new CountRecommender(client,userClusters,counter,clusterFromReferrerPeer.get(client));
