@@ -5,9 +5,7 @@ import io.seldon.clustering.recommender.ItemRecommendationAlgorithm;
 import io.seldon.clustering.recommender.ItemRecommendationResultSet;
 import io.seldon.clustering.recommender.RecommendationContext;
 import io.seldon.db.jdo.JDOFactory;
-import io.seldon.general.User;
 import io.seldon.general.UserAttributePeer;
-import io.seldon.general.UserAttributeValueVo;
 import io.seldon.general.UserPeer;
 import io.seldon.general.jdo.SqlUserAttributePeer;
 import io.seldon.general.jdo.SqlUserPeer;
@@ -17,7 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.jdo.PersistenceManager;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Component
 public class NaiveBayesRecommender implements ItemRecommendationAlgorithm {
@@ -46,43 +47,29 @@ public class NaiveBayesRecommender implements ItemRecommendationAlgorithm {
 	}
 
 	@Override
-	public ItemRecommendationResultSet recommend(String client, Long user,
+	public ItemRecommendationResultSet recommend(String clientId, Long userId,
 	                                             Set<Integer> dimensions, int maxRecsCount,
 	                                             RecommendationContext ctxt, List<Long> recentItemInteractions) {
-		UserPeer userPeer = getUserPeer(client);
-		UserAttributePeer userAttributePeer = getUserAttributePeer(client);
+		UserAttributePeer userAttributePeer = getUserAttributePeer(clientId);
 
-		User userBean = userPeer.getUser(user);
-		Map<Integer, UserAttributeValueVo> userAttributeValueVoMap
-				= userAttributePeer.getAttributesForUser(user);
+		Map<String, String> userAttributesNameMap =  userAttributePeer.getUserAttributesName(userId);
 
-		Map<String, UserAttributeValueVo> userAttributeVoMap =
-				new HashMap<>();
-
-		for (Integer index : userAttributeValueVoMap.keySet()) {
-			UserAttributeValueVo userAttributeValueVo = userAttributeValueVoMap.get(index);
-			logger.info(String.format("Index: %d, UserAttributeValueVo: %s=%s",
-					index, userAttributeValueVo.getName(), userAttributeValueVo.getValue()));
-			userAttributeVoMap.put(userAttributeValueVo.getName(), userAttributeValueVo);
+		for(String key : userAttributesNameMap.keySet()){
+			String value = userAttributesNameMap.get(key);
+			logger.info(String.format("userAttributesNameMap: %s=%s",
+					key, value));
 		}
 
-		NaiveBayesStore store = naiveBayesManager.getClientStore(client);
+		NaiveBayesStore store = naiveBayesManager.getClientStore(clientId);
 
 		String[] storeAttributeNames = store.getAttributeNames();
 
 		double[] userAttributeValueArray = new double[storeAttributeNames.length];
 		for (int index = 0; index < userAttributeValueArray.length; index++) {
-			UserAttributeValueVo userAttributeValueVo =
-					userAttributeVoMap.get(storeAttributeNames[index]);
-			double userAttributeValue = 0;
-			if (userAttributeValueVo.getValue() == null) {
-				userAttributeValue = 0;
-			} else if (userAttributeValueVo.getValue() instanceof String) {
-				userAttributeValue = Double.parseDouble((String) userAttributeValueVo.getValue());
-			} else if (userAttributeValueVo.getValue() instanceof Double) {
-				userAttributeValue = (Double) userAttributeValueVo.getValue();
-			}
-			userAttributeValueArray[index] = userAttributeValue;
+			String attributeName = storeAttributeNames[index];
+			Double attributeValue = Double.parseDouble(userAttributesNameMap.get(attributeName));
+			if(attributeValue == null) attributeValue = 0d;
+			userAttributeValueArray[index] = attributeValue;
 		}
 
 		StringBuilder sb = new StringBuilder(1024);
@@ -94,7 +81,7 @@ public class NaiveBayesRecommender implements ItemRecommendationAlgorithm {
 		}
 		logger.debug(String.format("UserAttributeValueArray: (%s)", sb.toString()));
 
-		NaiveBayesStore clientStore = naiveBayesManager.getClientStore(client);
+		NaiveBayesStore clientStore = naiveBayesManager.getClientStore(clientId);
 		DenseVector userVector = new DenseVector(userAttributeValueArray);
 		long itemId = Math.round(clientStore.getModel().predict(userVector));
 		logger.info(String.format("ItemId: %d", itemId));
